@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Taxi App V2</title>
+
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js"></script>
+
+<style>
+body { font-family: Arial; background:#111; color:white; text-align:center; }
+button { padding:10px; margin:5px; cursor:pointer; }
+input { padding:10px; margin:5px; width:80%; }
+.card { background:#222; margin:10px; padding:10px; border-radius:10px; }
+</style>
+</head>
+
+<body>
+
+<h2>🚕 Taxi V2</h2>
+
+<div id="menu">
+<button onclick="setRole('passenger')">Пассажир</button>
+<button onclick="setRole('driver')">Водитель</button>
+</div>
+
+<!-- PASSENGER -->
+<div id="passenger" style="display:none;">
+<h3>Заказ</h3>
+<input id="from" placeholder="Откуда">
+<input id="to" placeholder="Куда">
+<button onclick="createOrder()">Найти машину</button>
+</div>
+
+<!-- DRIVER -->
+<div id="driver" style="display:none;">
+<h3>Заявки</h3>
+<div id="orders"></div>
+</div>
+
+<script>
+// 🔥 FIREBASE CONFIG (ВСТАВЬ СЮДА СВОЙ)
+const firebaseConfig = {
+  apiKey: "YOUR",
+  authDomain: "YOUR",
+  databaseURL: "YOUR",
+  projectId: "YOUR",
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+let role = "";
+
+// cooldown водителя
+let cooldown = false;
+
+function setRole(r){
+  role = r;
+  document.getElementById("menu").style.display="none";
+  document.getElementById("passenger").style.display="none";
+  document.getElementById("driver").style.display="none";
+  document.getElementById(r).style.display="block";
+
+  if(r==="driver"){
+    loadOrders();
+  }
+}
+
+// 👤 VK ID (авто если есть bridge, иначе random)
+function getVKID(){
+  return window.vkUserId || "anon_" + Math.floor(Math.random()*99999);
+}
+
+// 🚕 создать заказ
+function createOrder(){
+  const from = document.getElementById("from").value;
+  const to = document.getElementById("to").value;
+
+  const id = Date.now();
+
+  db.ref("orders/"+id).set({
+    from,
+    to,
+    status:"new",
+    passenger:getVKID(),
+    driver:null
+  });
+
+  alert("🚕 Заявка создана!");
+}
+
+// 📡 загрузка заявок
+function loadOrders(){
+  db.ref("orders").on("value", snapshot=>{
+    const data = snapshot.val();
+    const container = document.getElementById("orders");
+    container.innerHTML="";
+
+    for(let id in data){
+      const o = data[id];
+
+      if(o.status === "new"){
+        container.innerHTML += `
+        <div class="card">
+          <b>${o.from}</b> → <b>${o.to}</b><br>
+          <small>Пассажир: ${o.passenger}</small><br><br>
+
+          <button onclick="acceptOrder('${id}')">
+            ✅ Принять
+          </button>
+        </div>`;
+      }
+
+      if(o.status === "taken"){
+        container.innerHTML += `
+        <div class="card" style="opacity:0.5">
+          🚕 ВЗЯТ ЗАКАЗ
+        </div>`;
+      }
+    }
+  });
+}
+
+// 🚨 ПРИНЯТЬ ЗАКАЗ
+function acceptOrder(id){
+
+  if(cooldown){
+    alert("⏳ Подожди 2 минуты перед новым заказом");
+    return;
+  }
+
+  db.ref("orders/"+id).once("value").then(snap=>{
+    const o = snap.val();
+
+    // ❌ если уже взят
+    if(o.status === "taken"){
+      alert("❌ Уже взят другим водителем");
+      return;
+    }
+
+    // 🔒 фиксируем заказ
+    db.ref("orders/"+id).update({
+      status:"taken",
+      driver:getVKID()
+    });
+
+    // 💬 показываем контакт
+    alert(
+      "🚕 Заказ принят!\n\n" +
+      "Пассажир: " + o.passenger + "\n" +
+      "Водитель: " + getVKID()
+    );
+
+    // ⏳ кулдаун 2 минуты
+    cooldown = true;
+
+    setTimeout(()=>{
+      cooldown = false;
+      alert("🟢 Можно брать новый заказ");
+    }, 120000);
+
+  });
+}
+
+</script>
+
+</body>
+</html>
